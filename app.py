@@ -2,10 +2,11 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 from io import BytesIO
+import os
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App with Threshold File")
-st.write("Upload the threshold file and new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included).")
+st.write("Upload the new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included). Threshold file is persisted locally as 'threshold.csv'.")
 
 # Priority disease list (customize as needed)
 priority_diseases = [
@@ -14,15 +15,10 @@ priority_diseases = [
     "Botulism (New Cases)",
     "Diphtheria (Probable) (New Cases)",
     "Neonatal Tetanus (New Cases)",
-    "Acute Flaccid Paralysis (New Cases)",
-    "Visceral Leishmaniasis (New Cases)",
-    "HIV/AIDS (New Cases)",
-    "Dengue Fever (New Cases)"
-
+    "Acute Flaccid Paralysis (New Cases)"
 ]
 
-# Upload threshold file and new week file
-threshold_file = st.file_uploader("Upload the threshold file (CSV from historical computation)", type=['csv'])
+# Upload new week file
 new_file = st.file_uploader("Upload new week data (Excel or CSV, e.g., week 40, 2025)", type=['xlsx', 'csv'])
 
 # Priority disease selector
@@ -32,21 +28,43 @@ selected_priority_diseases = st.multiselect(
     default=priority_diseases  # Default to all priority diseases
 )
 
-if threshold_file is not None and new_file is not None:
-    # Step 1: Load threshold file
+# Load or initialize threshold file
+threshold_file_path = 'threshold.csv'
+threshold_df = None
+if os.path.exists(threshold_file_path):
     encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-    threshold_df = None
     for encoding in encodings:
         try:
-            threshold_df = pd.read_csv(threshold_file, encoding=encoding)
-            st.write("Threshold file loaded successfully.")
+            threshold_df = pd.read_csv(threshold_file_path, encoding=encoding)
+            st.write("Threshold file loaded from local 'threshold.csv'.")
             break
         except UnicodeDecodeError:
             st.write(f"Failed to read threshold file with {encoding} encoding. Trying next...")
     if threshold_df is None:
-        st.error("Unable to read threshold file.")
+        st.error("Unable to read local threshold file. Please delete 'threshold.csv' and re-upload initial data.")
+        st.stop()
+else:
+    initial_threshold_file = st.file_uploader("Upload initial threshold file (CSV from historical computation) to create 'threshold.csv'", type=['csv'])
+    if initial_threshold_file is not None:
+        encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
+        for encoding in encodings:
+            try:
+                threshold_df = pd.read_csv(initial_threshold_file, encoding=encoding)
+                st.write("Initial threshold file loaded and saved as 'threshold.csv'.")
+                # Save to local file
+                with open(threshold_file_path, 'w', encoding='utf-8') as f:
+                    threshold_df.to_csv(f, index=False)
+                break
+            except UnicodeDecodeError:
+                st.write(f"Failed to read initial threshold file with {encoding} encoding. Trying next...")
+        if threshold_df is None:
+            st.error("Unable to read initial threshold file.")
+            st.stop()
+    else:
+        st.info("No threshold file found. Please upload the initial historical threshold CSV to get started.")
         st.stop()
 
+if threshold_df is not None and new_file is not None:
     # Extract current threshold for alerts
     current_thresholds = threshold_df[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
     last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
@@ -219,28 +237,30 @@ if threshold_file is not None and new_file is not None:
             updated_threshold_df.at[idx, 'Historical_Weeks_Count'] += 1
             updated_threshold_df.at[idx, 'Last_Updated_Week'] = new_week
 
-        # Download updated threshold file
+        # Save updated threshold to local file
+        updated_threshold_df.to_csv(threshold_file_path, index=False, encoding='utf-8')
+        st.success("Threshold file updated in place as 'threshold.csv' (no re-upload needed next time).")
+
+        # Optional: Download as backup
         updated_threshold = BytesIO()
         updated_threshold_df.to_csv(updated_threshold, index=False, encoding='utf-8')
         updated_threshold.seek(0)
         st.download_button(
-            label="Download Updated Threshold File (CSV)",
+            label="Download Updated Threshold File (CSV) as Backup",
             data=updated_threshold,
-            file_name='updated_threshold_file.csv',
+            file_name='threshold_backup.csv',
             mime='text/csv'
         )
-        st.success("Updated threshold file ready for next run.")
     else:
         st.info("No update needed for threshold file (duplicate week).")
 
 # Instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("1. Upload the threshold file (CSV from historical computation).")
+st.sidebar.write("1. On first run: Upload initial threshold CSV—it saves as 'threshold.csv' locally.")
 st.sidebar.write("2. Select priority diseases (defaults to all; they will always be included if deviation > 0).")
-st.sidebar.write("3. Upload new week data (Excel or CSV).")
+st.sidebar.write("3. Upload new week data (Excel or CSV) each time.")
 st.sidebar.write("4. Adjust sliders for non-priority alerts (set Top N to 0 and Min Deviation to 0 to show all).")
 st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results (now includes Percentage_Deviation column for sorting by relative increase).")
 st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease (also includes Percentage_Deviation).")
-st.sidebar.write("7. If new week, download updated_threshold_file.csv for next run.")
+st.sidebar.write("7. If new week, threshold auto-updates in 'threshold.csv'—no re-upload needed!")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
-
