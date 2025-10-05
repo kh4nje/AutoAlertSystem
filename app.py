@@ -25,7 +25,7 @@ new_file = st.file_uploader("Upload new week data (Excel or CSV, e.g., week 40, 
 selected_priority_diseases = st.multiselect(
     "Select priority diseases to always include in alerts (even low numbers):",
     options=priority_diseases,
-    default=priority_diseases[:2]  # Default to CCHF and Anthrax
+    default=priority_diseases  # Default to all priority diseases
 )
 
 if threshold_file is not None and new_file is not None:
@@ -120,24 +120,36 @@ if threshold_file is not None and new_file is not None:
         priority_alerts = alerts_df[alerts_df['Priority_Disease'] == 'Yes']
         non_priority_alerts = alerts_df[alerts_df['Priority_Disease'] == 'No']
 
-        # User controls for filtering non-priority alerts
+        # Debug info for priority alerts
+        st.write("**Debug Info:**")
+        st.write(f"Total raw alerts: {len(alerts_df)}")
+        st.write(f"Priority alerts found: {len(priority_alerts)}")
+        if len(priority_alerts) == 0:
+            st.warning("No priority disease alerts detected. Check if selected priority diseases have deviations > 0 in the data, or if names match exactly.")
+            st.write("Selected priority diseases:", selected_priority_diseases)
+        else:
+            st.success(f"Priority alerts: {len(priority_alerts)} (all included)")
+
+        # User controls for filtering non-priority alerts (removed default limit of 50, now optional with higher default)
         col1, col2 = st.columns(2)
         with col1:
-            top_n = st.slider("Top N Non-Priority Alerts", min_value=0, max_value=len(non_priority_alerts), value=min(50, len(non_priority_alerts)))  # Default to 50
+            top_n = st.slider("Top N Non-Priority Alerts (0 for all)", min_value=0, max_value=len(non_priority_alerts), value=0)  # Default to 0 (show all)
         with col2:
-            min_deviation = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=non_priority_alerts['Deviation'].max() if len(non_priority_alerts) > 0 else 1.0, value=2.0, step=0.5)  # Default min 2.0
+            min_deviation = st.slider("Min Deviation for Non-Priority", min_value=0.0, max_value=non_priority_alerts['Deviation'].max() if len(non_priority_alerts) > 0 else 1.0, value=0.0, step=0.5)  # Default min 0.0 to show all above threshold
 
         # Apply filters to non-priority
-        filtered_non_priority = non_priority_alerts[(non_priority_alerts['Deviation'] >= min_deviation)].head(top_n)
+        filtered_non_priority = non_priority_alerts[(non_priority_alerts['Deviation'] >= min_deviation)]
+        if top_n > 0:
+            filtered_non_priority = filtered_non_priority.head(top_n)
 
         # Combine: All priority + filtered non-priority
         filtered_alerts = pd.concat([priority_alerts, filtered_non_priority], ignore_index=True)
         if len(filtered_alerts) > 0:
             filtered_alerts = filtered_alerts.sort_values(by='Deviation', ascending=False)
-        st.write(f"Total raw alerts (after excluding Other-1/Other-2): {len(alerts_df)}. Showing: {len(priority_alerts)} priority + {len(filtered_non_priority)} filtered non-priority = {len(filtered_alerts)}.")
+        st.write(f"Showing: {len(priority_alerts)} priority + {len(filtered_non_priority)} filtered non-priority = {len(filtered_alerts)} total alerts.")
 
         # Display preview
-        st.dataframe(filtered_alerts.head(10))  # Show first 10 for preview
+        st.dataframe(filtered_alerts)  # Show all filtered alerts
 
         # Generate filtered alerts Excel
         output = BytesIO()
@@ -145,14 +157,14 @@ if threshold_file is not None and new_file is not None:
             filtered_alerts.to_excel(writer, index=False, sheet_name='Top Alerts')
         output.seek(0)
         st.download_button(
-            label=f"Download Top Alerts for Week {new_week} as Excel",
+            label=f"Download All Filtered Alerts for Week {new_week} as Excel",
             data=output,
-            file_name=f'alerts_week_{new_week}_top.xlsx',
+            file_name=f'alerts_week_{new_week}_filtered.xlsx',
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        st.success(f"Top {len(filtered_alerts)} alerts ready for download.")
+        st.success(f"Filtered alerts ready for download ({len(filtered_alerts)} rows).")
     else:
-        st.warning("No alerts found for Week {new_week} (after excluding Other-1/Other-2).")
+        st.warning(f"No alerts found for Week {new_week} (after excluding Other-1/Other-2). Check data for deviations > 0.")
 
     # Step 5: Update threshold file if new week
     if new_week != last_updated_week:
@@ -198,9 +210,9 @@ if threshold_file is not None and new_file is not None:
 # Instructions
 st.sidebar.title("Instructions")
 st.sidebar.write("1. Upload the threshold file (CSV from historical computation).")
-st.sidebar.write("2. Select priority diseases (e.g., CCHF) to always include.")
+st.sidebar.write("2. Select priority diseases (defaults to all; they will always be included if deviation > 0).")
 st.sidebar.write("3. Upload new week data (Excel or CSV).")
-st.sidebar.write("4. Adjust sliders to filter non-priority alerts (aim for 50-100 total).")
-st.sidebar.write("5. Download alerts_week_{N}_top.xlsx for filtered results.")
+st.sidebar.write("4. Adjust sliders for non-priority alerts (set Top N to 0 and Min Deviation to 0 to show all).")
+st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for results.")
 st.sidebar.write("6. If new week, download updated_threshold_file.csv for next run.")
-st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts.")
+st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
