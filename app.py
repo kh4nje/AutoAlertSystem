@@ -69,4 +69,10 @@ for level in org_levels:
 current_thresholds = threshold_df[org_levels + ['Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
 last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
 historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
-st.write(f"Using thresholds
+st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
+
+if new_file is not None:
+    # Step 2: Load new week data
+    if new_file.name.endswith('.xlsx'):
+        new_df = pd.read_excel(new_file)
+        new_df.columns
