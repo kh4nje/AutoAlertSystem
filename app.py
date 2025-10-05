@@ -5,8 +5,10 @@ from io import BytesIO
 import os
 
 # Streamlit app title
-st.title("Disease Outbreak Detection App with Threshold File")
-st.write("Upload the new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included). Threshold file is persisted locally as 'threshold.csv'.")
+st.title("IDSRS Disease Outbreak Detection App")
+st.write("By Asad khan")
+st.write("Upload the new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included).")
+
 
 # Priority disease list (customize as needed)
 priority_diseases = [
@@ -15,7 +17,10 @@ priority_diseases = [
     "Botulism (New Cases)",
     "Diphtheria (Probable) (New Cases)",
     "Neonatal Tetanus (New Cases)",
-    "Acute Flaccid Paralysis (New Cases)"
+    "Acute Flaccid Paralysis (New Cases)",
+    "Visceral Leishmaniasis (New Cases)",
+    "HIV/AIDS (New Cases)",
+    "Dengue Fever (New Cases)"
 ]
 
 # Upload new week file
@@ -264,3 +269,4 @@ st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results
 st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease (also includes Percentage_Deviation).")
 st.sidebar.write("7. If new week, threshold auto-updates in 'threshold.csv'—no re-upload needed!")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
+
