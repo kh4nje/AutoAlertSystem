@@ -87,4 +87,16 @@ if new_file is not None:
         possible_id_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
         id_cols = [col for col in possible_id_cols if col in new_df.columns]
         if 'organisationunitname' in new_df.columns:
-            new_df = new_df
+            new_df = new_df.rename(columns={'organisationunitname': 'Facility_Name'})
+        disease_cols = [col for col in new_df.columns if col not in id_cols]
+        long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
+        if 'Facility_Name' not in long_new.columns:
+            long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        # Ensure all org levels are present (fill with 'Unknown' if missing)
+        for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
+            if level not in long_new.columns:
+                long_new[level] = 'Unknown'
+        # Select only the required columns, avoiding KeyError
+        available_columns = [col for col in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases'] if col in long_new.columns]
+        long_new = long_new[available_columns]
+        long_new['Number_Cases']
