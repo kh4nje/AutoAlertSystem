@@ -53,8 +53,14 @@ if threshold_file is not None and new_file is not None:
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
         new_df.columns = new_df.columns.str.strip()
-        new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
-        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        # Check if 'periodname' exists; if not, prompt for week number
+        if 'periodname' in new_df.columns:
+            new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
+        else:
+            new_week_input = st.number_input("Enter the Epi Week Number for this data (since 'periodname' column is missing):", min_value=1, max_value=52, value=40)
+            new_df['Epi Week Number'] = new_week_input
+            st.info("No 'periodname' column found; using user-input week number.")
+        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number'] if 'periodname' in new_df.columns else ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
         disease_cols = [col for col in new_df.columns if col not in id_cols]
         long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
         long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
@@ -75,6 +81,10 @@ if threshold_file is not None and new_file is not None:
         if long_new is None:
             st.error("Unable to read new week CSV.")
             st.stop()
+        # For CSV, assume 'Epi Week Number' column exists or prompt
+        if 'Epi Week Number' not in long_new.columns:
+            new_week_input = st.number_input("Enter the Epi Week Number for this data (since column is missing):", min_value=1, max_value=52, value=40)
+            long_new['Epi Week Number'] = new_week_input
 
     # Step 3: Check new week against historical threshold
     new_week = long_new['Epi Week Number'].unique()[0]  # Assume single week
@@ -169,38 +179,4 @@ if threshold_file is not None and new_file is not None:
             old_mean = row['Historical_Mean']
             old_std = row['Historical_Std']
             # Running mean
-            new_mean = (old_mean * old_n + new_case) / (old_n + 1)
-            # Running variance (approx, using updated mean)
-            old_variance = old_std ** 2
-            new_variance = ((old_n - 1) * old_variance + (old_n * (old_mean - new_mean)**2 + new_case * (new_case - new_mean)**2)) / old_n
-            new_std = np.sqrt(new_variance)
-            new_threshold = new_mean + 3 * new_std if new_std > 0 else new_mean
-            updated_threshold_df.at[idx, 'Historical_Mean'] = round(new_mean, 2)
-            updated_threshold_df.at[idx, 'Historical_Std'] = round(new_std, 2)
-            updated_threshold_df.at[idx, 'Historical_Threshold'] = round(new_threshold, 2)
-            updated_threshold_df.at[idx, 'Historical_Weeks_Count'] += 1
-            updated_threshold_df.at[idx, 'Last_Updated_Week'] = new_week
-
-        # Download updated threshold file
-        updated_threshold = BytesIO()
-        updated_threshold_df.to_csv(updated_threshold, index=False, encoding='utf-8')
-        updated_threshold.seek(0)
-        st.download_button(
-            label="Download Updated Threshold File (CSV)",
-            data=updated_threshold,
-            file_name='updated_threshold_file.csv',
-            mime='text/csv'
-        )
-        st.success("Updated threshold file ready for next run.")
-    else:
-        st.info("No update needed for threshold file (duplicate week).")
-
-# Instructions
-st.sidebar.title("Instructions")
-st.sidebar.write("1. Upload the threshold file (CSV from historical computation).")
-st.sidebar.write("2. Select priority diseases (e.g., CCHF) to always include.")
-st.sidebar.write("3. Upload new week data (Excel or CSV).")
-st.sidebar.write("4. Adjust sliders to filter non-priority alerts (aim for 50-100 total).")
-st.sidebar.write("5. Download alerts_week_{N}_top.xlsx for filtered results.")
-st.sidebar.write("6. If new week, download updated_threshold_file.csv for next run.")
-st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts.")
+            new_mean = (old_mean * old_n + new_case)
