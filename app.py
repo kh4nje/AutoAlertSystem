@@ -95,6 +95,7 @@ if threshold_file is not None and new_file is not None:
             continue  # Skip if no historical threshold (new facility-disease)
         deviation = row['Number_Cases'] - row['Historical_Threshold']
         if deviation > 0:
+            percentage_deviation = round((deviation / row['Historical_Threshold']) * 100, 2) if row['Historical_Threshold'] > 0 else 0
             is_priority = disease_name in selected_priority_diseases
             alerts_list.append({
                 'orgunitlevel1': row['orgunitlevel1'],
@@ -108,6 +109,7 @@ if threshold_file is not None and new_file is not None:
                 'New_Week_Cases': row['Number_Cases'],
                 'Historical_Threshold': row['Historical_Threshold'],
                 'Deviation': round(deviation, 2),
+                'Percentage_Deviation': percentage_deviation,
                 'Priority_Disease': 'Yes' if is_priority else 'No'
             })
 
@@ -233,7 +235,7 @@ st.sidebar.write("1. Upload the threshold file (CSV from historical computation)
 st.sidebar.write("2. Select priority diseases (defaults to all; they will always be included if deviation > 0).")
 st.sidebar.write("3. Upload new week data (Excel or CSV).")
 st.sidebar.write("4. Adjust sliders for non-priority alerts (set Top N to 0 and Min Deviation to 0 to show all).")
-st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results.")
-st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease.")
+st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results (now includes Percentage_Deviation column for sorting by relative increase).")
+st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease (also includes Percentage_Deviation).")
 st.sidebar.write("7. If new week, download updated_threshold_file.csv for next run.")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
