@@ -154,7 +154,7 @@ if threshold_file is not None and new_file is not None:
         # Generate filtered alerts Excel
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            filtered_alerts.to_excel(writer, index=False, sheet_name='Top Alerts')
+            filtered_alerts.to_excel(writer, index=False, sheet_name='Filtered Alerts')
         output.seek(0)
         st.download_button(
             label=f"Download All Filtered Alerts for Week {new_week} as Excel",
@@ -163,6 +163,26 @@ if threshold_file is not None and new_file is not None:
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         st.success(f"Filtered alerts ready for download ({len(filtered_alerts)} rows).")
+
+        # Top 4 alerts per disease
+        top_per_disease = []
+        for disease in alerts_df['Disease'].unique():
+            disease_alerts = alerts_df[alerts_df['Disease'] == disease].head(4)
+            top_per_disease.append(disease_alerts)
+        if top_per_disease:
+            top_alerts_df = pd.concat(top_per_disease, ignore_index=True)
+            top_alerts_df = top_alerts_df.sort_values(by=['Disease', 'Deviation'], ascending=[True, False])
+            output_top = BytesIO()
+            with pd.ExcelWriter(output_top, engine='openpyxl') as writer:
+                top_alerts_df.to_excel(writer, index=False, sheet_name='Top Alerts')
+            output_top.seek(0)
+            st.download_button(
+                label=f"Download Top 4 Alerts Per Disease for Week {new_week} as Excel",
+                data=output_top,
+                file_name=f'top_alerts_week_{new_week}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            st.success(f"Top alerts per disease ready for download ({len(top_alerts_df)} rows).")
     else:
         st.warning(f"No alerts found for Week {new_week} (after excluding Other-1/Other-2). Check data for deviations > 0.")
 
@@ -213,6 +233,7 @@ st.sidebar.write("1. Upload the threshold file (CSV from historical computation)
 st.sidebar.write("2. Select priority diseases (defaults to all; they will always be included if deviation > 0).")
 st.sidebar.write("3. Upload new week data (Excel or CSV).")
 st.sidebar.write("4. Adjust sliders for non-priority alerts (set Top N to 0 and Min Deviation to 0 to show all).")
-st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for results.")
-st.sidebar.write("6. If new week, download updated_threshold_file.csv for next run.")
+st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results.")
+st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease.")
+st.sidebar.write("7. If new week, download updated_threshold_file.csv for next run.")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
