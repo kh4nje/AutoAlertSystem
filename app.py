@@ -6,7 +6,7 @@ import os
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App with Threshold File")
-st.write("Threshold file is pre-loaded. Upload only the new week data. All priority diseases are pre-selected. Excludes 'Other-1' and 'Other-2'.")
+st.write("Threshold file is pre-loaded if available. Upload new week data. All priority diseases are pre-selected. Excludes 'Other-1' and 'Other-2'.")
 
 # Priority disease list (all pre-selected by default)
 priority_diseases = [
@@ -51,8 +51,22 @@ else:
         st.error("Threshold file 'threshold_file.csv' not found. Place it in the app directory or upload as fallback.")
         st.stop()
 
+# Handle missing columns in threshold_df (fill with 'Unknown' if absent)
+required_cols = ['Facility_Name', 'Disease_Name', 'Historical_Threshold']
+missing_cols = [col for col in required_cols if col not in threshold_df.columns]
+if missing_cols:
+    st.error(f"Missing required columns in threshold file: {missing_cols}. Please re-generate the threshold file.")
+    st.stop()
+
+# Add org levels if missing (fill with 'Unknown')
+org_levels = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']
+for level in org_levels:
+    if level not in threshold_df.columns:
+        threshold_df[level] = 'Unknown'
+        st.warning(f"Column '{level}' missing in threshold file; filled with 'Unknown'.")
+
 # Extract current threshold for alerts
-current_thresholds = threshold_df[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
+current_thresholds = threshold_df[org_levels + ['Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
 last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
 historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
 st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
@@ -78,11 +92,13 @@ if new_file is not None:
         long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
         if 'Facility_Name' not in long_new.columns:
             long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
-        # Ensure all org levels are present (fill NaN if missing)
+        # Ensure all org levels are present (fill with 'Unknown' if missing)
         for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
             if level not in long_new.columns:
                 long_new[level] = 'Unknown'
-        long_new = long_new[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']]
+        # Select only the required columns, avoiding KeyError
+        available_columns = [col for col in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases'] if col in long_new.columns]
+        long_new = long_new[available_columns]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week Excel file processed successfully.")
@@ -109,6 +125,12 @@ if new_file is not None:
                 long_new[level] = 'Unknown'
         if 'Facility_Name' not in long_new.columns:
             long_new['Facility_Name'] = long_new.get('organisationunitname', 'Unknown')
+        # Select only the required columns, avoiding KeyError
+        available_columns = [col for col in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases'] if col in long_new.columns]
+        long_new = long_new[available_columns]
+        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
+        long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
+        st.write("New week CSV file processed successfully.")
 
     # Step 3: Check new week against historical threshold
     new_week = long_new['Epi Week Number'].unique()[0]  # Assume single week
@@ -175,32 +197,4 @@ if new_file is not None:
 
         # Generate filtered alerts Excel
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            filtered_alerts.to_excel(writer, index=False, sheet_name='Top Alerts')
-        output.seek(0)
-        st.download_button(
-            label=f"Download Top Alerts for Week {new_week} as Excel",
-            data=output,
-            file_name=f'alerts_week_{new_week}_top.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        st.success(f"Top {len(filtered_alerts)} alerts ready for download.")
-    else:
-        st.warning("No alerts found for Week {new_week} (after excluding Other-1/Other-2).")
-
-    # Step 5: Update threshold file if new week
-    if new_week != last_updated_week:
-        # Recalculate threshold using historical stats + new week (running formulas)
-        updated_threshold_df = threshold_df.copy()
-        for idx, row in updated_threshold_df.iterrows():
-            facility = row['Facility_Name']
-            disease = row['Disease_Name']
-            new_case = long_new[(long_new['Facility_Name'] == facility) & (long_new['Disease_Name'] == disease)]['Number_Cases'].values
-            if len(new_case) == 0:
-                continue
-            new_case = new_case[0]
-            old_n = row['Historical_Weeks_Count']
-            old_mean = row['Historical_Mean']
-            old_std = row['Historical_Std']
-            # Running mean
-            new_mean
+        with pd.ExcelWriter(output
