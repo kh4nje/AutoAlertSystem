@@ -2,13 +2,12 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 from io import BytesIO
-import os
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App with Threshold File")
-st.write("Threshold file is pre-loaded if available. Upload new week data. All priority diseases are pre-selected. Excludes 'Other-1' and 'Other-2'.")
+st.write("Upload the threshold file and new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included).")
 
-# Priority disease list (all pre-selected by default)
+# Priority disease list (customize as needed)
 priority_diseases = [
     "Crimean Congo Hemorrhagic Fever (New Cases)",
     "Anthrax (New Cases)",
@@ -18,87 +17,48 @@ priority_diseases = [
     "Acute Flaccid Paralysis (New Cases)"
 ]
 
-# Pre-select all priority diseases (user can deselect if needed)
-selected_priority_diseases = st.multiselect(
-    "Priority diseases (all pre-selected; deselect if needed):",
-    options=priority_diseases,
-    default=priority_diseases  # All pre-selected
-)
-
-# Upload only new week file
+# Upload threshold file and new week file
+threshold_file = st.file_uploader("Upload the threshold file (CSV from historical computation)", type=['csv'])
 new_file = st.file_uploader("Upload new week data (Excel or CSV, e.g., week 40, 2025)", type=['xlsx', 'csv'])
 
-# Pre-load threshold file (assume 'threshold_file.csv' in app directory; fallback upload if not found)
-threshold_path = 'threshold_file.csv'
-if os.path.exists(threshold_path):
-    threshold_df = pd.read_csv(threshold_path)
-    st.success("Threshold file pre-loaded successfully from 'threshold_file.csv'.")
-else:
-    threshold_file_upload = st.file_uploader("Threshold file not found. Upload as fallback:", type=['csv'])
-    if threshold_file_upload is not None:
-        encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-        for encoding in encodings:
-            try:
-                threshold_df = pd.read_csv(threshold_file_upload, encoding=encoding)
-                st.write("Threshold file loaded from upload.")
-                break
-            except UnicodeDecodeError:
-                continue
-        if 'threshold_df' not in locals():
-            st.error("Unable to read threshold file.")
-            st.stop()
-    else:
-        st.error("Threshold file 'threshold_file.csv' not found. Place it in the app directory or upload as fallback.")
+# Priority disease selector
+selected_priority_diseases = st.multiselect(
+    "Select priority diseases to always include in alerts (even low numbers):",
+    options=priority_diseases,
+    default=priority_diseases[:2]  # Default to CCHF and Anthrax
+)
+
+if threshold_file is not None and new_file is not None:
+    # Step 1: Load threshold file
+    encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
+    threshold_df = None
+    for encoding in encodings:
+        try:
+            threshold_df = pd.read_csv(threshold_file, encoding=encoding)
+            st.write("Threshold file loaded successfully.")
+            break
+        except UnicodeDecodeError:
+            st.write(f"Failed to read threshold file with {encoding} encoding. Trying next...")
+    if threshold_df is None:
+        st.error("Unable to read threshold file.")
         st.stop()
 
-# Handle missing columns in threshold_df (fill with 'Unknown' if absent)
-required_cols = ['Facility_Name', 'Disease_Name', 'Historical_Threshold']
-missing_cols = [col for col in required_cols if col not in threshold_df.columns]
-if missing_cols:
-    st.error(f"Missing required columns in threshold file: {missing_cols}. Please re-generate the threshold file.")
-    st.stop()
+    # Extract current threshold for alerts
+    current_thresholds = threshold_df[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
+    last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
+    historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
+    st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
 
-# Add org levels if missing (fill with 'Unknown')
-org_levels = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']
-for level in org_levels:
-    if level not in threshold_df.columns:
-        threshold_df[level] = 'Unknown'
-        st.warning(f"Column '{level}' missing in threshold file; filled with 'Unknown'.")
-
-# Extract current threshold for alerts
-current_thresholds = threshold_df[org_levels + ['Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
-last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
-historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
-st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
-
-if new_file is not None:
     # Step 2: Load new week data
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
         new_df.columns = new_df.columns.str.strip()
-        # Check if 'periodname' exists; if not, prompt for week number
-        if 'periodname' in new_df.columns:
-            new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
-        else:
-            new_week_input = st.number_input("Enter the Epi Week Number for this data (since 'periodname' column is missing):", min_value=1, max_value=52, value=40)
-            new_df['Epi Week Number'] = new_week_input
-            st.info("No 'periodname' column found; using user-input week number.")
-        # Dynamically build id_cols based on available columns
-        possible_id_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
-        id_cols = [col for col in possible_id_cols if col in new_df.columns]
-        if 'organisationunitname' in new_df.columns:
-            new_df = new_df.rename(columns={'organisationunitname': 'Facility_Name'})
+        new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
+        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
         disease_cols = [col for col in new_df.columns if col not in id_cols]
         long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
-        if 'Facility_Name' not in long_new.columns:
-            long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
-        # Ensure all org levels are present (fill with 'Unknown' if missing)
-        for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
-            if level not in long_new.columns:
-                long_new[level] = 'Unknown'
-        # Select only the required columns, avoiding KeyError
-        available_columns = [col for col in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases'] if col in long_new.columns]
-        long_new = long_new[available_columns]
+        long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        long_new = long_new[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week Excel file processed successfully.")
@@ -115,22 +75,6 @@ if new_file is not None:
         if long_new is None:
             st.error("Unable to read new week CSV.")
             st.stop()
-        # For CSV, assume 'Epi Week Number' column exists or prompt
-        if 'Epi Week Number' not in long_new.columns:
-            new_week_input = st.number_input("Enter the Epi Week Number for this data (since column is missing):", min_value=1, max_value=52, value=40)
-            long_new['Epi Week Number'] = new_week_input
-        # Dynamically add missing org levels as 'Unknown'
-        for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
-            if level not in long_new.columns:
-                long_new[level] = 'Unknown'
-        if 'Facility_Name' not in long_new.columns:
-            long_new['Facility_Name'] = long_new.get('organisationunitname', 'Unknown')
-        # Select only the required columns, avoiding KeyError
-        available_columns = [col for col in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases'] if col in long_new.columns]
-        long_new = long_new[available_columns]
-        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
-        long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
-        st.write("New week CSV file processed successfully.")
 
     # Step 3: Check new week against historical threshold
     new_week = long_new['Epi Week Number'].unique()[0]  # Assume single week
@@ -197,4 +141,66 @@ if new_file is not None:
 
         # Generate filtered alerts Excel
         output = BytesIO()
-        with pd.ExcelWriter(output
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            filtered_alerts.to_excel(writer, index=False, sheet_name='Top Alerts')
+        output.seek(0)
+        st.download_button(
+            label=f"Download Top Alerts for Week {new_week} as Excel",
+            data=output,
+            file_name=f'alerts_week_{new_week}_top.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        st.success(f"Top {len(filtered_alerts)} alerts ready for download.")
+    else:
+        st.warning("No alerts found for Week {new_week} (after excluding Other-1/Other-2).")
+
+    # Step 5: Update threshold file if new week
+    if new_week != last_updated_week:
+        # Recalculate threshold using historical stats + new week (running formulas)
+        updated_threshold_df = threshold_df.copy()
+        for idx, row in updated_threshold_df.iterrows():
+            facility = row['Facility_Name']
+            disease = row['Disease_Name']
+            new_case = long_new[(long_new['Facility_Name'] == facility) & (long_new['Disease_Name'] == disease)]['Number_Cases'].values
+            if len(new_case) == 0:
+                continue
+            new_case = new_case[0]
+            old_n = row['Historical_Weeks_Count']
+            old_mean = row['Historical_Mean']
+            old_std = row['Historical_Std']
+            # Running mean
+            new_mean = (old_mean * old_n + new_case) / (old_n + 1)
+            # Running variance (approx, using updated mean)
+            old_variance = old_std ** 2
+            new_variance = ((old_n - 1) * old_variance + (old_n * (old_mean - new_mean)**2 + new_case * (new_case - new_mean)**2)) / old_n
+            new_std = np.sqrt(new_variance)
+            new_threshold = new_mean + 3 * new_std if new_std > 0 else new_mean
+            updated_threshold_df.at[idx, 'Historical_Mean'] = round(new_mean, 2)
+            updated_threshold_df.at[idx, 'Historical_Std'] = round(new_std, 2)
+            updated_threshold_df.at[idx, 'Historical_Threshold'] = round(new_threshold, 2)
+            updated_threshold_df.at[idx, 'Historical_Weeks_Count'] += 1
+            updated_threshold_df.at[idx, 'Last_Updated_Week'] = new_week
+
+        # Download updated threshold file
+        updated_threshold = BytesIO()
+        updated_threshold_df.to_csv(updated_threshold, index=False, encoding='utf-8')
+        updated_threshold.seek(0)
+        st.download_button(
+            label="Download Updated Threshold File (CSV)",
+            data=updated_threshold,
+            file_name='updated_threshold_file.csv',
+            mime='text/csv'
+        )
+        st.success("Updated threshold file ready for next run.")
+    else:
+        st.info("No update needed for threshold file (duplicate week).")
+
+# Instructions
+st.sidebar.title("Instructions")
+st.sidebar.write("1. Upload the threshold file (CSV from historical computation).")
+st.sidebar.write("2. Select priority diseases (e.g., CCHF) to always include.")
+st.sidebar.write("3. Upload new week data (Excel or CSV).")
+st.sidebar.write("4. Adjust sliders to filter non-priority alerts (aim for 50-100 total).")
+st.sidebar.write("5. Download alerts_week_{N}_top.xlsx for filtered results.")
+st.sidebar.write("6. If new week, download updated_threshold_file.csv for next run.")
+st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts.")
