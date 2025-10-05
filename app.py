@@ -15,7 +15,12 @@ priority_diseases = [
     "Botulism (New Cases)",
     "Diphtheria (Probable) (New Cases)",
     "Neonatal Tetanus (New Cases)",
-    "Acute Flaccid Paralysis (New Cases)"
+    "Acute Flaccid Paralysis (New Cases)",
+    "Visceral Leishmaniasis (New Cases)",
+    "HIV/AIDS (New Cases)",
+    "Dengue Fever (New Cases)"
+    
+
 ]
 
 # Pre-select all priority diseases (user can deselect if needed)
@@ -76,3 +81,4 @@ if new_file is not None:
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
         new_df.columns
+
