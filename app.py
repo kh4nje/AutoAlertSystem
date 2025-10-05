@@ -14,7 +14,11 @@ priority_diseases = [
     "Botulism (New Cases)",
     "Diphtheria (Probable) (New Cases)",
     "Neonatal Tetanus (New Cases)",
-    "Acute Flaccid Paralysis (New Cases)"
+    "Acute Flaccid Paralysis (New Cases)",
+    "Visceral Leishmaniasis (New Cases)",
+    "HIV/AIDS (New Cases)",
+    "Dengue Fever (New Cases)"
+
 ]
 
 # Upload threshold file and new week file
@@ -239,3 +243,4 @@ st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results
 st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease (also includes Percentage_Deviation).")
 st.sidebar.write("7. If new week, download updated_threshold_file.csv for next run.")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
+
