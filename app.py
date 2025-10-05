@@ -2,12 +2,13 @@ import pandas as pd
 import streamlit as st
 import numpy as np
 from io import BytesIO
+import os
 
 # Streamlit app title
 st.title("Disease Outbreak Detection App with Threshold File")
-st.write("Upload the threshold file and new week data. Excludes 'Other-1' and 'Other-2' diseases. Filter for top alerts (ranked by deviation, with priority diseases always included).")
+st.write("Threshold file is pre-loaded. Upload only the new week data. All priority diseases are pre-selected. Excludes 'Other-1' and 'Other-2'.")
 
-# Priority disease list (customize as needed)
+# Priority disease list (all pre-selected by default)
 priority_diseases = [
     "Crimean Congo Hemorrhagic Fever (New Cases)",
     "Anthrax (New Cases)",
@@ -17,38 +18,46 @@ priority_diseases = [
     "Acute Flaccid Paralysis (New Cases)"
 ]
 
-# Upload threshold file and new week file
-threshold_file = st.file_uploader("Upload the threshold file (CSV from historical computation)", type=['csv'])
-new_file = st.file_uploader("Upload new week data (Excel or CSV, e.g., week 40, 2025)", type=['xlsx', 'csv'])
-
-# Priority disease selector
+# Pre-select all priority diseases (user can deselect if needed)
 selected_priority_diseases = st.multiselect(
-    "Select priority diseases to always include in alerts (even low numbers):",
+    "Priority diseases (all pre-selected; deselect if needed):",
     options=priority_diseases,
-    default=priority_diseases[:2]  # Default to CCHF and Anthrax
+    default=priority_diseases  # All pre-selected
 )
 
-if threshold_file is not None and new_file is not None:
-    # Step 1: Load threshold file
-    encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-    threshold_df = None
-    for encoding in encodings:
-        try:
-            threshold_df = pd.read_csv(threshold_file, encoding=encoding)
-            st.write("Threshold file loaded successfully.")
-            break
-        except UnicodeDecodeError:
-            st.write(f"Failed to read threshold file with {encoding} encoding. Trying next...")
-    if threshold_df is None:
-        st.error("Unable to read threshold file.")
+# Upload only new week file
+new_file = st.file_uploader("Upload new week data (Excel or CSV, e.g., week 40, 2025)", type=['xlsx', 'csv'])
+
+# Pre-load threshold file (assume 'threshold_file.csv' in app directory; fallback upload if not found)
+threshold_path = 'threshold_file.csv'
+if os.path.exists(threshold_path):
+    threshold_df = pd.read_csv(threshold_path)
+    st.success("Threshold file pre-loaded successfully from 'threshold_file.csv'.")
+else:
+    threshold_file_upload = st.file_uploader("Threshold file not found. Upload as fallback:", type=['csv'])
+    if threshold_file_upload is not None:
+        encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
+        for encoding in encodings:
+            try:
+                threshold_df = pd.read_csv(threshold_file_upload, encoding=encoding)
+                st.write("Threshold file loaded from upload.")
+                break
+            except UnicodeDecodeError:
+                continue
+        if 'threshold_df' not in locals():
+            st.error("Unable to read threshold file.")
+            st.stop()
+    else:
+        st.error("Threshold file 'threshold_file.csv' not found. Place it in the app directory or upload as fallback.")
         st.stop()
 
-    # Extract current threshold for alerts
-    current_thresholds = threshold_df[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
-    last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
-    historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
-    st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
+# Extract current threshold for alerts
+current_thresholds = threshold_df[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Historical_Threshold']].copy()
+last_updated_week = threshold_df['Last_Updated_Week'].iloc[0] if 'Last_Updated_Week' in threshold_df.columns else 0
+historical_weeks_count = threshold_df['Historical_Weeks_Count'].iloc[0] if 'Historical_Weeks_Count' in threshold_df.columns else 0
+st.write(f"Using thresholds from {historical_weeks_count} historical weeks, last updated week {last_updated_week}.")
 
+if new_file is not None:
     # Step 2: Load new week data
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
@@ -60,10 +69,19 @@ if threshold_file is not None and new_file is not None:
             new_week_input = st.number_input("Enter the Epi Week Number for this data (since 'periodname' column is missing):", min_value=1, max_value=52, value=40)
             new_df['Epi Week Number'] = new_week_input
             st.info("No 'periodname' column found; using user-input week number.")
-        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number'] if 'periodname' in new_df.columns else ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        # Dynamically build id_cols based on available columns
+        possible_id_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        id_cols = [col for col in possible_id_cols if col in new_df.columns]
+        if 'organisationunitname' in new_df.columns:
+            new_df = new_df.rename(columns={'organisationunitname': 'Facility_Name'})
         disease_cols = [col for col in new_df.columns if col not in id_cols]
         long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
-        long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        if 'Facility_Name' not in long_new.columns:
+            long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        # Ensure all org levels are present (fill NaN if missing)
+        for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
+            if level not in long_new.columns:
+                long_new[level] = 'Unknown'
         long_new = long_new[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
@@ -85,6 +103,12 @@ if threshold_file is not None and new_file is not None:
         if 'Epi Week Number' not in long_new.columns:
             new_week_input = st.number_input("Enter the Epi Week Number for this data (since column is missing):", min_value=1, max_value=52, value=40)
             long_new['Epi Week Number'] = new_week_input
+        # Dynamically add missing org levels as 'Unknown'
+        for level in ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6']:
+            if level not in long_new.columns:
+                long_new[level] = 'Unknown'
+        if 'Facility_Name' not in long_new.columns:
+            long_new['Facility_Name'] = long_new.get('organisationunitname', 'Unknown')
 
     # Step 3: Check new week against historical threshold
     new_week = long_new['Epi Week Number'].unique()[0]  # Assume single week
@@ -179,4 +203,4 @@ if threshold_file is not None and new_file is not None:
             old_mean = row['Historical_Mean']
             old_std = row['Historical_Std']
             # Running mean
-            new_mean = (old_mean * old_n + new_case)
+            new_mean
