@@ -75,4 +75,16 @@ if new_file is not None:
     # Step 2: Load new week data
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
-        new_df.columns
+        new_df.columns = new_df.columns.str.strip()
+        # Check if 'periodname' exists; if not, prompt for week number
+        if 'periodname' in new_df.columns:
+            new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
+        else:
+            new_week_input = st.number_input("Enter the Epi Week Number for this data (since 'periodname' column is missing):", min_value=1, max_value=52, value=40)
+            new_df['Epi Week Number'] = new_week_input
+            st.info("No 'periodname' column found; using user-input week number.")
+        # Dynamically build id_cols based on available columns
+        possible_id_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        id_cols = [col for col in possible_id_cols if col in new_df.columns]
+        if 'organisationunitname' in new_df.columns:
+            new_df = new_df
