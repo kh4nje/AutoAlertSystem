@@ -79,49 +79,63 @@ if threshold_df is not None and new_file is not None:
     # Step 2: Load new week data
     if new_file.name.endswith('.xlsx'):
         new_df = pd.read_excel(new_file)
-        new_df.columns = new_df.columns.str.strip()
-        new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
-        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
-        disease_cols = [col for col in new_df.columns if col not in id_cols]
-        long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
-        long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
-        long_new = long_new[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']]
-        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
-        long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
-        st.write("New week Excel file processed successfully.")
     else:
-        # For CSV, assume long format
         encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-        long_new = None
+        new_df = None
         for encoding in encodings:
             try:
-                long_new = pd.read_csv(new_file, encoding=encoding)
+                new_df = pd.read_csv(new_file, encoding=encoding)
                 st.write(f"New week CSV read with {encoding} encoding.")
                 break
             except UnicodeDecodeError:
                 st.write(f"Failed to read new week CSV with {encoding} encoding. Trying next...")
-        if long_new is None:
+        if new_df is None:
             st.error("Unable to read new week CSV.")
             st.stop()
 
-        # Process long CSV: strip columns, extract epi week, rename, select columns, etc.
-        long_new.columns = long_new.columns.str.strip()
-        if 'periodname' in long_new.columns:
-            long_new['Epi Week Number'] = long_new['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
-        else:
-            st.error("CSV missing 'periodname' column. Expected for epi week extraction.")
-            st.stop()
-        long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
-        # Ensure required columns are present
+    # Common processing for both Excel and CSV
+    new_df.columns = new_df.columns.str.strip()
+    if 'periodname' in new_df.columns:
+        new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
+    else:
+        st.error("Missing 'periodname' column for epi week extraction.")
+        st.stop()
+
+    # Auto-detect format: long or wide
+    if 'Disease_Name' in new_df.columns and 'Number_Cases' in new_df.columns:
+        st.write("Detected long format data.")
+        # Long format processing
+        long_new = new_df.copy()
+        if 'organisationunitname' in long_new.columns:
+            long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
         required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
         missing_cols = [col for col in required_cols if col not in long_new.columns]
         if missing_cols:
-            st.error(f"CSV missing required columns: {missing_cols}. Please check data format.")
+            st.error(f"Long format missing required columns: {missing_cols}. Please check data format.")
             st.stop()
         long_new = long_new[required_cols]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
-        st.write("New week CSV file processed successfully.")
+        st.write("New week long format file processed successfully.")
+    else:
+        st.write("Detected wide format data.")
+        # Wide format processing
+        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        missing_id_cols = [col for col in id_cols if col not in new_df.columns]
+        if missing_id_cols:
+            st.error(f"Wide format missing ID columns: {missing_id_cols}. Expected columns like orgunitlevel1, periodname, etc.")
+            st.stop()
+        disease_cols = [col for col in new_df.columns if col not in id_cols]
+        if not disease_cols:
+            st.error("No disease columns found in wide format. All columns are ID columns.")
+            st.stop()
+        long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
+        long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
+        long_new = long_new[required_cols]
+        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
+        long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
+        st.write("New week wide format file processed successfully.")
 
     # Step 3: Check new week against historical threshold
     new_week = long_new['Epi Week Number'].unique()[0]  # Assume single week
