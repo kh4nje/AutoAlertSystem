@@ -90,28 +90,35 @@ if threshold_df is not None and new_file is not None:
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week Excel file processed successfully.")
     else:
-        # For CSV, apply similar processing as Excel to handle wide format
+        # For CSV, assume long format
         encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
-        new_df = None
+        long_new = None
         for encoding in encodings:
             try:
-                new_df = pd.read_csv(new_file, encoding=encoding)
+                long_new = pd.read_csv(new_file, encoding=encoding)
                 st.write(f"New week CSV read with {encoding} encoding.")
                 break
             except UnicodeDecodeError:
                 st.write(f"Failed to read new week CSV with {encoding} encoding. Trying next...")
-        if new_df is None:
+        if long_new is None:
             st.error("Unable to read new week CSV.")
             st.stop()
 
-        # Now process CSV like Excel
-        new_df.columns = new_df.columns.str.strip()
-        new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
-        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
-        disease_cols = [col for col in new_df.columns if col not in id_cols]
-        long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
+        # Process long CSV: strip columns, extract epi week, rename, select columns, etc.
+        long_new.columns = long_new.columns.str.strip()
+        if 'periodname' in long_new.columns:
+            long_new['Epi Week Number'] = long_new['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
+        else:
+            st.error("CSV missing 'periodname' column. Expected for epi week extraction.")
+            st.stop()
         long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
-        long_new = long_new[['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']]
+        # Ensure required columns are present
+        required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
+        missing_cols = [col for col in required_cols if col not in long_new.columns]
+        if missing_cols:
+            st.error(f"CSV missing required columns: {missing_cols}. Please check data format.")
+            st.stop()
+        long_new = long_new[required_cols]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week CSV file processed successfully.")
