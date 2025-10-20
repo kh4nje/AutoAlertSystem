@@ -121,13 +121,16 @@ if threshold_df is not None and new_file is not None:
                     org_levels[col_name] = actual_col
                     long_new = long_new.rename(columns={actual_col: col_name})
                     break
+            else:
+                st.warning(f"Could not find orgunitlevel{level}, using empty string for missing levels.")
+                long_new[col_name] = ''  # Add empty column if missing
         required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
         missing_cols = [col for col in required_cols if col not in long_new.columns]
         if missing_cols:
             st.error(f"Long format missing required columns: {missing_cols}. Please check data format. Available columns: {long_new.columns.tolist()}")
             st.stop()
         long_new = long_new[required_cols]
-        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
+        long_new['Number_Cases'] = pd.to_numeric(long_new['Number_Cases'], errors='coerce').fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week long format file processed successfully.")
     else:
@@ -169,7 +172,7 @@ if threshold_df is not None and new_file is not None:
             st.error(f"Wide format after melt missing required columns: {missing_cols}. Available: {long_new.columns.tolist()}")
             st.stop()
         long_new = long_new[required_cols]
-        long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
+        long_new['Number_Cases'] = pd.to_numeric(long_new['Number_Cases'], errors='coerce').fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
         st.write("New week wide format file processed successfully.")
 
@@ -180,8 +183,8 @@ if threshold_df is not None and new_file is not None:
     else:
         st.success(f"New week {new_week} is new. Checking against historical threshold from {historical_weeks_count} weeks.")
 
-    # Merge new data with thresholds for alert check (include org levels)
-    new_with_threshold = long_new.merge(current_thresholds, on=['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name'], how='left')
+    # Merge new data with thresholds for alert check (only on Facility and Disease, since org levels missing)
+    new_with_threshold = long_new.merge(current_thresholds, on=['Facility_Name', 'Disease_Name'], how='left')
     alerts_list = []
     for _, row in new_with_threshold.iterrows():
         disease_name = row['Disease_Name']
@@ -195,12 +198,12 @@ if threshold_df is not None and new_file is not None:
             percentage_deviation = round((deviation / row['Historical_Threshold']) * 100, 2) if row['Historical_Threshold'] > 0 else 0
             is_priority = disease_name in selected_priority_diseases
             alerts_list.append({
-                'orgunitlevel1': row['orgunitlevel1'],
-                'orgunitlevel2': row['orgunitlevel2'],
-                'orgunitlevel3': row['orgunitlevel3'],
-                'orgunitlevel4': row['orgunitlevel4'],
-                'orgunitlevel5': row['orgunitlevel5'],
-                'orgunitlevel6': row['orgunitlevel6'],
+                'orgunitlevel1': row.get('orgunitlevel1', ''),
+                'orgunitlevel2': row.get('orgunitlevel2', ''),
+                'orgunitlevel3': row.get('orgunitlevel3', ''),
+                'orgunitlevel4': row.get('orgunitlevel4', ''),
+                'orgunitlevel5': row.get('orgunitlevel5', ''),
+                'orgunitlevel6': row.get('orgunitlevel6', ''),
                 'Facility': row['Facility_Name'],
                 'Disease': disease_name,
                 'New_Week_Cases': row['Number_Cases'],
@@ -340,3 +343,4 @@ st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per 
 st.sidebar.write("7. If new week, threshold auto-updates in 'threshold.csv'—no re-upload needed!")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
 st.sidebar.write("New: Added debug print of available columns and flexible column name mapping for org levels (e.g., orgUnitLevel1, org_unit_level_1).")
+st.sidebar.write("Updated: Merge now on Facility_Name and Disease_Name only (since org levels often missing). Added safe numeric conversion for case counts.")
