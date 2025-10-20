@@ -95,6 +95,8 @@ if threshold_df is not None and new_file is not None:
 
     # Common processing for both Excel and CSV
     new_df.columns = new_df.columns.str.strip()
+    st.write("**Debug: Available columns in uploaded file:**", new_df.columns.tolist())
+
     if 'periodname' in new_df.columns:
         new_df['Epi Week Number'] = new_df['periodname'].str.extract(r'Week (\d+)', expand=False).astype(int)
     else:
@@ -108,10 +110,21 @@ if threshold_df is not None and new_file is not None:
         long_new = new_df.copy()
         if 'organisationunitname' in long_new.columns:
             long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
+        # Try to map org level columns if not exact match (case-insensitive search)
+        org_levels = {}
+        for level in range(1, 7):
+            col_name = f'orgunitlevel{level}'
+            possible_names = [col_name, f'orgUnitLevel{level}', f'org_unit_level_{level}', f'oulevel{level}']
+            for possible in possible_names:
+                if possible.lower() in [c.lower() for c in long_new.columns]:
+                    actual_col = next(c for c in long_new.columns if possible.lower() in c.lower())
+                    org_levels[col_name] = actual_col
+                    long_new = long_new.rename(columns={actual_col: col_name})
+                    break
         required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
         missing_cols = [col for col in required_cols if col not in long_new.columns]
         if missing_cols:
-            st.error(f"Long format missing required columns: {missing_cols}. Please check data format.")
+            st.error(f"Long format missing required columns: {missing_cols}. Please check data format. Available columns: {long_new.columns.tolist()}")
             st.stop()
         long_new = long_new[required_cols]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
@@ -120,10 +133,29 @@ if threshold_df is not None and new_file is not None:
     else:
         st.write("Detected wide format data.")
         # Wide format processing
-        id_cols = ['periodname', 'orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'organisationunitname', 'Epi Week Number']
+        # Try to map columns similarly
+        id_cols_base = ['periodname', 'organisationunitname']
+        org_levels = {}
+        for level in range(1, 7):
+            col_name = f'orgunitlevel{level}'
+            possible_names = [col_name, f'orgUnitLevel{level}', f'org_unit_level_{level}', f'oulevel{level}']
+            found = False
+            for possible in possible_names:
+                if possible.lower() in [c.lower() for c in new_df.columns]:
+                    actual_col = next(c for c in new_df.columns if possible.lower() in c.lower())
+                    org_levels[col_name] = actual_col
+                    new_df = new_df.rename(columns={actual_col: col_name})
+                    id_cols_base.append(col_name)
+                    found = True
+                    break
+            if not found:
+                st.warning(f"Could not find orgunitlevel{level}, using empty string for missing levels.")
+                new_df[col_name] = ''  # Add empty column if missing
+                id_cols_base.append(col_name)
+        id_cols = id_cols_base + ['Epi Week Number']
         missing_id_cols = [col for col in id_cols if col not in new_df.columns]
         if missing_id_cols:
-            st.error(f"Wide format missing ID columns: {missing_id_cols}. Expected columns like orgunitlevel1, periodname, etc.")
+            st.error(f"Wide format missing ID columns: {missing_id_cols}. Expected columns like orgunitlevel1, periodname, etc. Available columns: {new_df.columns.tolist()}")
             st.stop()
         disease_cols = [col for col in new_df.columns if col not in id_cols]
         if not disease_cols:
@@ -132,6 +164,10 @@ if threshold_df is not None and new_file is not None:
         long_new = pd.melt(new_df, id_vars=id_cols, value_vars=disease_cols, var_name='Disease_Name', value_name='Number_Cases')
         long_new = long_new.rename(columns={'organisationunitname': 'Facility_Name'})
         required_cols = ['orgunitlevel1', 'orgunitlevel2', 'orgunitlevel3', 'orgunitlevel4', 'orgunitlevel5', 'orgunitlevel6', 'Facility_Name', 'Disease_Name', 'Epi Week Number', 'Number_Cases']
+        missing_cols = [col for col in required_cols if col not in long_new.columns]
+        if missing_cols:
+            st.error(f"Wide format after melt missing required columns: {missing_cols}. Available: {long_new.columns.tolist()}")
+            st.stop()
         long_new = long_new[required_cols]
         long_new['Number_Cases'] = long_new['Number_Cases'].fillna(0).astype(int)
         long_new = long_new.sort_values(by=['Facility_Name', 'Disease_Name', 'Epi Week Number'])
@@ -303,3 +339,4 @@ st.sidebar.write("5. Download alerts_week_{N}_filtered.xlsx for filtered results
 st.sidebar.write("6. Download top_alerts_week_{N}.xlsx for top 4 deviations per disease (also includes Percentage_Deviation).")
 st.sidebar.write("7. If new week, threshold auto-updates in 'threshold.csv'—no re-upload needed!")
 st.sidebar.write("Note: 'Other-1' and 'Other-2' are automatically excluded from alerts. Debug info shows priority alert counts.")
+st.sidebar.write("New: Added debug print of available columns and flexible column name mapping for org levels (e.g., orgUnitLevel1, org_unit_level_1).")
